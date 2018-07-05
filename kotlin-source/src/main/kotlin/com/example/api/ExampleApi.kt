@@ -1,6 +1,7 @@
 package com.example.api
 
 import com.example.flow.ExampleFlow.Initiator
+import com.example.flow.PayIOUFlow
 import com.example.schema.IOUSchemaV1
 import com.example.state.IOUState
 import net.corda.core.identity.CordaX500Name
@@ -14,6 +15,7 @@ import net.corda.core.node.services.vault.builder
 import net.corda.core.utilities.getOrThrow
 import net.corda.core.utilities.loggerFor
 import org.slf4j.Logger
+import java.util.*
 import javax.ws.rs.*
 import javax.ws.rs.core.MediaType
 import javax.ws.rs.core.Response
@@ -109,6 +111,25 @@ class ExampleApi(private val rpcOps: CordaRPCOps) {
                 val criteria = generalCriteria.and(customCriteria)
                 val results = rpcOps.vaultQueryBy<IOUState>(criteria).states
                 return Response.ok(results).build()
+        }
+    }
+
+    @PUT
+    @Path("pay-iou")
+    @Produces(MediaType.APPLICATION_JSON)
+    fun payIOU(@QueryParam("iouId") iouId: String, @QueryParam("payment-value")paymentValue: Int): Response {
+        val iouIdUUID = try {
+            UUID.fromString(iouId)
+        } catch (e: Throwable){
+            return Response.status(BAD_REQUEST).entity("Não foi possível desserializar o iouId.").build()
+        }
+        if (paymentValue <= 0)
+            return Response.status(BAD_REQUEST).entity("O valor de pagamento deve ser maior que zero.").build()
+        return try {
+            val signedTx = rpcOps.startTrackedFlow(PayIOUFlow::Initiator, iouIdUUID, paymentValue).returnValue.getOrThrow()
+            Response.status(CREATED).entity("Transaction id ${signedTx.id} committed to ledger.\n").build()
+        }catch (e: Throwable){
+            return Response.status(BAD_REQUEST).entity(e.message).build()
         }
     }
 }

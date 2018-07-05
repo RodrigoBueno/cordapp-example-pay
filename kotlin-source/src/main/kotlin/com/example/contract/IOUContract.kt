@@ -30,7 +30,15 @@ open class IOUContract : Contract {
      * considered valid.
      */
     override fun verify(tx: LedgerTransaction) {
-        val command = tx.commands.requireSingleCommand<Commands.Create>()
+        val command = tx.commands.requireSingleCommand<Commands>()
+        when(command.value) {
+            is Commands.Create -> verifyCreate(tx)
+            is Commands.Pay -> verifyPay(tx)
+        }
+    }
+
+    private fun verifyCreate(tx: LedgerTransaction) {
+        val command = tx.commands.requireSingleCommand<Commands>()
         requireThat {
             // Generic constraints around the IOU transaction.
             "No inputs should be consumed when issuing an IOU." using (tx.inputs.isEmpty())
@@ -41,7 +49,32 @@ open class IOUContract : Contract {
 
             // IOU-specific constraints.
             "The IOU's value must be non-negative." using (out.value > 0)
+            "The IOU's payment value must be 0." using (out.paymentValue == 0)
         }
+    }
+
+    private fun verifyPay(tx: LedgerTransaction) {
+        val command = tx.commands.requireSingleCommand<Commands>()
+        requireThat {
+            // Generic constraints around the IOU transaction.
+            "Only one input should be consumed when paying an IOU." using (tx.inputs.size == 1)
+            "Only one output state should be created." using (tx.outputs.size == 1)
+            val input = tx.inputsOfType<IOUState>().single()
+            val output = tx.outputsOfType<IOUState>().single()
+            "The input and output state should be the same." using (input.linearId == output.linearId)
+            "All of the participants must be signers." using (command.signers.containsAll(output.participants.map { it.owningKey }))
+
+            // IOU-specific constraints.
+            "O valor de pagamento no Output tem que ser maior que o valor de pagamento no Input." using
+                    (output.paymentValue > input.paymentValue)
+            "O valor de pagamento no Output não pode ser maior que o valor do empréstimo." using
+                    (output.paymentValue <= output.value)
+            "Apenas o valor de pagamento pode ser alterado." using
+                    (input.lender == output.lender &&
+                            input.borrower == output.borrower &&
+                            input.value == output.value)
+        }
+
     }
 
     /**
@@ -49,5 +82,6 @@ open class IOUContract : Contract {
      */
     interface Commands : CommandData {
         class Create : Commands
+        class Pay: Commands
     }
 }

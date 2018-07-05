@@ -24,7 +24,10 @@ class IOUFlowTests {
         a = network.createPartyNode()
         b = network.createPartyNode()
         // For real nodes this happens automatically, but we have to manually register the flow for tests.
-        listOf(a, b).forEach { it.registerInitiatedFlow(ExampleFlow.Acceptor::class.java) }
+        listOf(a, b).forEach {
+            it.registerInitiatedFlow(ExampleFlow.Acceptor::class.java)
+            it.registerInitiatedFlow(PayIOUFlow.Acceptor::class.java)
+        }
         network.runNetwork()
     }
 
@@ -117,4 +120,32 @@ class IOUFlowTests {
             }
         }
     }
+
+    @Test
+    fun `deve ser possivel executar a funcao de pagamento`() {
+        val flow = ExampleFlow.Initiator(10, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
+
+        val stateCriado = future.getOrThrow().coreTransaction.outputsOfType<IOUState>().single()
+
+        val payFlow = PayIOUFlow.Initiator(stateCriado.linearId.id, 10)
+        val payFuture = b.startFlow(payFlow)
+        network.runNetwork()
+        payFuture.getOrThrow()
+
+        for (node in listOf(a, b)) {
+            node.transaction {
+                val ious = node.services.vaultService.queryBy<IOUState>().states
+                assertEquals(1, ious.size)
+                val recordedState = ious.single().state.data
+                assertEquals(recordedState.value, 10)
+                assertEquals(recordedState.paymentValue, 10)
+                assertEquals(recordedState.lender, a.info.singleIdentity())
+                assertEquals(recordedState.borrower, b.info.singleIdentity())
+            }
+        }
+    }
+
+
 }
