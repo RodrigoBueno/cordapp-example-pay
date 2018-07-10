@@ -34,6 +34,7 @@ open class IOUContract : Contract {
         when(command.value) {
             is Commands.Create -> verifyCreate(tx)
             is Commands.Pay -> verifyPay(tx)
+            is Commands.Transfer -> verifyTransfer(tx)
         }
     }
 
@@ -62,9 +63,10 @@ open class IOUContract : Contract {
             val input = tx.inputsOfType<IOUState>().single()
             val output = tx.outputsOfType<IOUState>().single()
             "The input and output state should be the same." using (input.linearId == output.linearId)
-            "All of the participants must be signers." using (command.signers.containsAll(output.participants.map { it.owningKey }))
+            "All of the participants must be signers." using (command.signers.containsAll((output.participants + input.participants).map { it.owningKey }))
 
             // IOU-specific constraints.
+            "The lender and the borrower cannot be the same entity." using (output.lender != output.borrower)
             "O valor de pagamento no Output tem que ser maior que o valor de pagamento no Input." using
                     (output.paymentValue > input.paymentValue)
             "O valor de pagamento no Output não pode ser maior que o valor do empréstimo." using
@@ -77,11 +79,33 @@ open class IOUContract : Contract {
 
     }
 
+    fun verifyTransfer(tx: LedgerTransaction) {
+        val command = tx.commands.requireSingleCommand<Commands>()
+        requireThat {
+            // Generic constraints around the IOU transaction.
+            "Only one input should be consumed when paying an IOU." using (tx.inputs.size == 1)
+            "Only one output state should be created." using (tx.outputs.size == 1)
+            val input = tx.inputsOfType<IOUState>().single()
+            val output = tx.outputsOfType<IOUState>().single()
+            "The input and output state should be the same." using (input.linearId == output.linearId)
+            "All of the participants must be signers." using (command.signers.containsAll(output.participants.map { it.owningKey }))
+
+            // IOU-specific constraints.
+            "O Lender deve ser diferente." using
+                    (output.lender != input.lender)
+            "Apenas o Lender pode ser alterado." using
+                    (input.paymentValue == output.paymentValue &&
+                            input.borrower == output.borrower &&
+                            input.value == output.value)
+        }
+    }
+
     /**
      * This contract only implements one command, Create.
      */
     interface Commands : CommandData {
         class Create : Commands
         class Pay: Commands
+        class Transfer: Commands
     }
 }

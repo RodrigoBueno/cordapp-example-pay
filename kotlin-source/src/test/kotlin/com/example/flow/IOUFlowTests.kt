@@ -17,16 +17,19 @@ class IOUFlowTests {
     lateinit var network: MockNetwork
     lateinit var a: StartedMockNode
     lateinit var b: StartedMockNode
+    lateinit var c: StartedMockNode
 
     @Before
     fun setup() {
         network = MockNetwork(listOf("com.example.contract"))
         a = network.createPartyNode()
         b = network.createPartyNode()
+        c = network.createPartyNode()
         // For real nodes this happens automatically, but we have to manually register the flow for tests.
-        listOf(a, b).forEach {
+        listOf(a, b, c).forEach {
             it.registerInitiatedFlow(ExampleFlow.Acceptor::class.java)
             it.registerInitiatedFlow(PayIOUFlow.Acceptor::class.java)
+            it.registerInitiatedFlow(TransferIOUFlow.Acceptor::class.java)
         }
         network.runNetwork()
     }
@@ -147,5 +150,33 @@ class IOUFlowTests {
         }
     }
 
+    @Test
+    fun `deve ser possivel executar a funcao de transferencia`() {
+        val flow = ExampleFlow.Initiator(10, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
 
+        val stateCriado = future.getOrThrow().coreTransaction.outputsOfType<IOUState>().single()
+
+        val payFlow = TransferIOUFlow.Initiator(stateCriado.linearId.id, c.info.singleIdentity())
+        val payFuture = a.startFlow(payFlow)
+        network.runNetwork()
+        payFuture.getOrThrow()
+
+        for (node in listOf(b, c)) {
+            node.transaction {
+                val ious = node.services.vaultService.queryBy<IOUState>().states
+                assertEquals(1, ious.size)
+                val recordedState = ious.single().state.data
+                assertEquals(recordedState.value, 10)
+                assertEquals(recordedState.paymentValue, 0)
+                assertEquals(recordedState.lender, c.info.singleIdentity())
+                assertEquals(recordedState.borrower, b.info.singleIdentity())
+            }
+        }
+        a.transaction {
+            val ious = a.services.vaultService.queryBy<IOUState>().states
+            assertEquals(0, ious.size)
+        }
+    }
 }
