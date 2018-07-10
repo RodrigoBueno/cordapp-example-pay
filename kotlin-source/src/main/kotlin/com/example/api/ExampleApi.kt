@@ -2,6 +2,7 @@ package com.example.api
 
 import com.example.flow.ExampleFlow.Initiator
 import com.example.flow.PayIOUFlow
+import com.example.flow.TransferIOUFlow
 import com.example.schema.IOUSchemaV1
 import com.example.state.IOUState
 import net.corda.core.identity.CordaX500Name
@@ -127,6 +128,29 @@ class ExampleApi(private val rpcOps: CordaRPCOps) {
             return Response.status(BAD_REQUEST).entity("O valor de pagamento deve ser maior que zero.").build()
         return try {
             val signedTx = rpcOps.startTrackedFlow(PayIOUFlow::Initiator, iouIdUUID, paymentValue).returnValue.getOrThrow()
+            Response.status(CREATED).entity("Transaction id ${signedTx.id} committed to ledger.\n").build()
+        }catch (e: Throwable){
+            return Response.status(BAD_REQUEST).entity(e.message).build()
+        }
+    }
+
+    @PUT
+    @Path("transfer-iou")
+    @Produces(MediaType.APPLICATION_JSON)
+    fun transferIOU(@QueryParam("iouId") iouId: String, @QueryParam("other-party")party: CordaX500Name?): Response {
+        val iouIdUUID = try {
+            UUID.fromString(iouId)
+        } catch (e: Throwable){
+            return Response.status(BAD_REQUEST).entity("Não foi possível desserializar o iouId.").build()
+        }
+        if (party == null) {
+            return Response.status(BAD_REQUEST).entity("Query parameter 'partyName' missing or has wrong format.\n").build()
+        }
+        val otherParty = rpcOps.wellKnownPartyFromX500Name(party) ?:
+            return Response.status(BAD_REQUEST).entity("Party named $party cannot be found.\n").build()
+
+        return try {
+            val signedTx = rpcOps.startTrackedFlow(TransferIOUFlow::Initiator, iouIdUUID, otherParty).returnValue.getOrThrow()
             Response.status(CREATED).entity("Transaction id ${signedTx.id} committed to ledger.\n").build()
         }catch (e: Throwable){
             return Response.status(BAD_REQUEST).entity(e.message).build()
