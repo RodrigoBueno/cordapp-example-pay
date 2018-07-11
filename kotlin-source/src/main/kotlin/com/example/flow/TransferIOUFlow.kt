@@ -32,7 +32,7 @@ object TransferIOUFlow {
             val notary = oldState.state.notary
 
             val newState = oldState.state.data.copy(lender = newOwner)
-            val command = Command(IOUContract.Commands.Transfer(), (newState.participants + newOwner).map { it.owningKey })
+            val command = Command(IOUContract.Commands.Transfer(), (newState.participants + ourIdentity).map { it.owningKey })
             val txBuilder = TransactionBuilder(notary)
                     .addInputState(oldState)
                     .addOutputState(newState, oldState.state.contract)

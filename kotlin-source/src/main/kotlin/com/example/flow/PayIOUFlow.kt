@@ -30,7 +30,7 @@ object PayIOUFlow {
 
             val notary = oldState.state.notary
 
-            val newState = oldState.state.data.copy(paymentValue = paymentValue)
+            val newState = oldState.state.data.copy(paymentValue = paymentValue+oldState.state.data.paymentValue)
             val command = Command(IOUContract.Commands.Pay(), newState.participants.map { it.owningKey })
             val txBuilder = TransactionBuilder(notary)
                     .addInputState(oldState)
@@ -60,8 +60,7 @@ object PayIOUFlow {
                     val criteria = QueryCriteria.LinearStateQueryCriteria(linearId = listOf(output.linearId))
                     val input = serviceHub.vaultService.queryBy<IOUState>(criteria).states.single().state.data
                     "O pagamento total deve ser realizado." using
-                            (output.paymentValue == output.value ||
-                                    (output.paymentValue != output.value && input.paymentValue != 0))
+                            (output.paymentValue == output.value || input.paymentValue == 0)
                 }
             }
 

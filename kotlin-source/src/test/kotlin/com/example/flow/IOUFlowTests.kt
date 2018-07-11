@@ -125,6 +125,92 @@ class IOUFlowTests {
     }
 
     @Test
+    fun `deve ser possivel realizar um pagamento parcial de ao menos metade do valor`() {
+        val flow = ExampleFlow.Initiator(10, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
+
+        val stateCriado = future.getOrThrow().coreTransaction.outputsOfType<IOUState>().single()
+
+        val payFlow = PayIOUFlow.Initiator(stateCriado.linearId.id, 5)
+        val payFuture = b.startFlow(payFlow)
+        network.runNetwork()
+        payFuture.getOrThrow()
+
+        for (node in listOf(a, b)) {
+            node.transaction {
+                val ious = node.services.vaultService.queryBy<IOUState>().states
+                assertEquals(1, ious.size)
+                val recordedState = ious.single().state.data
+                assertEquals(recordedState.value, 10)
+                assertEquals(recordedState.paymentValue, 5)
+                assertEquals(recordedState.lender, a.info.singleIdentity())
+                assertEquals(recordedState.borrower, b.info.singleIdentity())
+            }
+        }
+    }
+
+    fun `deve ser possivel realizar um pagamento parcial e depois realizar o pagamento total`() {
+        val flow = ExampleFlow.Initiator(10, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
+
+        val stateCriado = future.getOrThrow().coreTransaction.outputsOfType<IOUState>().single()
+
+        val payFlow = PayIOUFlow.Initiator(stateCriado.linearId.id, 5)
+        val payFuture = b.startFlow(payFlow)
+        network.runNetwork()
+        payFuture.getOrThrow()
+
+        val payFlow2 = PayIOUFlow.Initiator(stateCriado.linearId.id, 5)
+        val payFuture2 = b.startFlow(payFlow2)
+        network.runNetwork()
+        payFuture2.getOrThrow()
+
+        for (node in listOf(a, b)) {
+            node.transaction {
+                val ious = node.services.vaultService.queryBy<IOUState>().states
+                assertEquals(1, ious.size)
+                val recordedState = ious.single().state.data
+                assertEquals(recordedState.value, 10)
+                assertEquals(recordedState.paymentValue, 10)
+                assertEquals(recordedState.lender, a.info.singleIdentity())
+                assertEquals(recordedState.borrower, b.info.singleIdentity())
+            }
+        }
+    }
+
+    fun `não deve ser possível realizar dois pagamentos parciais`() {
+        val flow = ExampleFlow.Initiator(10, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
+
+        val stateCriado = future.getOrThrow().coreTransaction.outputsOfType<IOUState>().single()
+
+        val payFlow = PayIOUFlow.Initiator(stateCriado.linearId.id, 5)
+        val payFuture = b.startFlow(payFlow)
+        network.runNetwork()
+        payFuture.getOrThrow()
+
+        val payFlow2 = PayIOUFlow.Initiator(stateCriado.linearId.id, 2)
+        val payFuture2 = b.startFlow(payFlow2)
+        network.runNetwork()
+        assertFailsWith<TransactionVerificationException> { payFuture2.getOrThrow() }
+
+        for (node in listOf(a, b)) {
+            node.transaction {
+                val ious = node.services.vaultService.queryBy<IOUState>().states
+                assertEquals(1, ious.size)
+                val recordedState = ious.single().state.data
+                assertEquals(recordedState.value, 10)
+                assertEquals(recordedState.paymentValue, 5)
+                assertEquals(recordedState.lender, a.info.singleIdentity())
+                assertEquals(recordedState.borrower, b.info.singleIdentity())
+            }
+        }
+    }
+
+    @Test
     fun `deve ser possivel executar a funcao de pagamento`() {
         val flow = ExampleFlow.Initiator(10, b.info.singleIdentity())
         val future = a.startFlow(flow)
@@ -142,8 +228,8 @@ class IOUFlowTests {
                 val ious = node.services.vaultService.queryBy<IOUState>().states
                 assertEquals(1, ious.size)
                 val recordedState = ious.single().state.data
-                assertEquals(recordedState.value, 10)
-                assertEquals(recordedState.paymentValue, 10)
+                assertEquals(10, recordedState.value)
+                assertEquals(10, recordedState.paymentValue)
                 assertEquals(recordedState.lender, a.info.singleIdentity())
                 assertEquals(recordedState.borrower, b.info.singleIdentity())
             }
@@ -168,8 +254,8 @@ class IOUFlowTests {
                 val ious = node.services.vaultService.queryBy<IOUState>().states
                 assertEquals(1, ious.size)
                 val recordedState = ious.single().state.data
-                assertEquals(recordedState.value, 10)
-                assertEquals(recordedState.paymentValue, 0)
+                assertEquals(10, recordedState.value)
+                assertEquals(0, recordedState.paymentValue)
                 assertEquals(recordedState.lender, c.info.singleIdentity())
                 assertEquals(recordedState.borrower, b.info.singleIdentity())
             }
